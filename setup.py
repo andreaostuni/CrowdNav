@@ -24,6 +24,9 @@ setup(
         'torchvision',
     ],
     extras_require={
+        'openvino': [
+            'openvino',
+        ],
         'test': [
             'pylint',
             'pytest',

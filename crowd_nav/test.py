@@ -19,6 +19,12 @@ def main():
     parser.add_argument("--model_dir", type=str, default=None)
     parser.add_argument("--il", default=False, action="store_true")
     parser.add_argument("--gpu", default=False, action="store_true")
+    parser.add_argument("--openvino", default=False, action="store_true")
+    parser.add_argument("--openvino_model", type=str, default=None)
+    parser.add_argument("--ov_performance_hint", type=str, default="LATENCY")
+    parser.add_argument("--ov_num_threads", type=int, default=0)
+    parser.add_argument("--ov_cache_dir", type=str, default=None)
+    parser.add_argument("--ov_export_path", type=str, default=None)
     parser.add_argument("--visualize", default=False, action="store_true")
     parser.add_argument("--phase", type=str, default="test")
     parser.add_argument("--test_case", type=int, default=None)
@@ -44,7 +50,7 @@ def main():
                 model_weights = os.path.join(args.model_dir, "rl_model.pth")
     else:
         env_config_file = args.env_config
-        policy_config_file = args.env_config
+        policy_config_file = args.policy_config
 
     # configure logging and device
     logging.basicConfig(
@@ -52,7 +58,10 @@ def main():
         format="%(asctime)s, %(levelname)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    device = torch.device("cuda:0" if torch.cuda.is_available() and args.gpu else "cpu")
+    if args.openvino:
+        device = torch.device("cpu")
+    else:
+        device = torch.device("cuda:0" if torch.cuda.is_available() and args.gpu else "cpu")
     logging.info("Using device: %s", device)
 
     # configure policy
@@ -65,7 +74,28 @@ def main():
             parser.error(
                 "Trainable policy must be specified with a model weights directory"
             )
-        policy.get_model().load_state_dict(torch.load(model_weights))
+        policy.get_model().load_state_dict(torch.load(model_weights, map_location=device))
+
+    if args.openvino:
+        if not hasattr(policy, "enable_openvino"):
+            parser.error("This policy does not support OpenVINO inference backend")
+        try:
+            policy.enable_openvino(
+                model_path=args.openvino_model,
+                device_name="CPU",
+                performance_hint=args.ov_performance_hint,
+                num_threads=args.ov_num_threads,
+                cache_dir=args.ov_cache_dir,
+                export_path=args.ov_export_path,
+            )
+        except Exception as exc:
+            parser.error("Failed to enable OpenVINO backend: {}".format(exc))
+        logging.info(
+            "OpenVINO backend enabled (model=%s, hint=%s, threads=%s)",
+            args.openvino_model,
+            args.ov_performance_hint,
+            args.ov_num_threads,
+        )
 
     # configure environment
     env_config = configparser.RawConfigParser()

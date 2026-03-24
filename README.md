@@ -88,3 +88,31 @@ If you find the codes or paper useful for your research, please cite our paper:
   organization={IEEE}
 }
 ```
+
+## OpenVINO CPU Inference
+
+Install optional OpenVINO support:
+
+```bash
+pip install -e '.[openvino]'
+```
+
+Export a trained policy checkpoint to OpenVINO IR (`.xml`/`.bin`):
+
+```bash
+cd crowd_nav
+python export_openvino.py \
+  --policy sarl \
+  --policy_config configs/policy.config \
+  --weights data/output/rl_model.pth \
+  --num_humans 5 \
+  --output data/output/openvino/sarl.xml
+```
+
+Run evaluation with the OpenVINO backend on CPU:
+
+```bash
+python test.py --policy sarl --model_dir data/output --phase test --openvino --openvino_model data/output/openvino/sarl.xml
+```
+
+You can also enable OpenVINO directly in `configs/policy.config` under `[inference]`.

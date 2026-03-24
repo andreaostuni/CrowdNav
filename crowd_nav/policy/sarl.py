@@ -51,7 +51,8 @@ class ValueNetwork(nn.Module):
         # weights = softmax(scores, dim=1).unsqueeze(2)
         scores_exp = torch.exp(scores) * (scores != 0).float()
         weights = (scores_exp / torch.sum(scores_exp, dim=1, keepdim=True)).unsqueeze(2)
-        self.attention_weights = weights[0, :, 0].data.cpu().numpy()
+        if not torch.jit.is_tracing():
+            self.attention_weights = weights[0, :, 0].data.cpu().numpy()
 
         # output feature is a linear combination of input features
         features = mlp2_output.view(size[0], size[1], -1)
@@ -81,6 +82,7 @@ class SARL(MultiHumanRL):
         self.model = ValueNetwork(self.input_dim(), self.self_state_dim, mlp1_dims, mlp2_dims, mlp3_dims,
                                   attention_dims, with_global_state, self.cell_size, self.cell_num)
         self.multiagent_training = config.getboolean('sarl', 'multiagent_training')
+        self.configure_inference_backend(config)
         if self.with_om:
             self.name = 'OM-SARL'
         logging.info('Policy: {} {} global state'.format(self.name, 'w/' if with_global_state else 'w/o'))

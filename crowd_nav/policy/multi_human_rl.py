@@ -48,7 +48,7 @@ class MultiHumanRL(CADRL):
                         occupancy_maps = self.build_occupancy_maps(next_human_states).unsqueeze(0)
                     rotated_batch_input = torch.cat([rotated_batch_input, occupancy_maps.to(self.device)], dim=2)
                 # VALUE UPDATE
-                next_state_value = self.model(rotated_batch_input).data.item()
+                next_state_value = float(self.infer_value_network_numpy(rotated_batch_input).reshape(-1)[0])
                 value = reward + pow(self.gamma, self.time_step * state.self_state.v_pref) * next_state_value
                 self.action_values.append(value)
                 if value > max_value:
