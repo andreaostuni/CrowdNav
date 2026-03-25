@@ -66,6 +66,7 @@ class CADRL(Policy):
         self._ov_num_threads = 0
         self._ov_cache_dir = None
         self._ov_compiled_cache = dict()
+        self._ov_infer_request_cache = dict()
         self._ov_training_warning_emitted = False
 
     def configure(self, config):
@@ -134,6 +135,7 @@ class CADRL(Policy):
         self._ov_num_threads = max(0, int(num_threads))
         self._ov_cache_dir = cache_dir
         self._ov_compiled_cache.clear()
+        self._ov_infer_request_cache.clear()
         self._ov_core = None
         if hasattr(self.model, 'attention_weights'):
             self.model.attention_weights = None
@@ -142,6 +144,7 @@ class CADRL(Policy):
     def disable_openvino(self):
         self.inference_backend = 'torch'
         self._ov_compiled_cache.clear()
+        self._ov_infer_request_cache.clear()
 
     def export_openvino_model(self, output_xml_path, input_shape):
         ov, _ = self._ensure_openvino_runtime()
@@ -243,6 +246,7 @@ class CADRL(Policy):
         else:
             compiled_model = core.compile_model(ov_model, self._ov_device)
         self._ov_compiled_cache[shape_key] = compiled_model
+        self._ov_infer_request_cache.pop(shape_key, None)
         return compiled_model
 
     def _convert_torch_model_to_openvino(self, input_tensor):
@@ -270,8 +274,12 @@ class CADRL(Policy):
 
     def _openvino_infer_numpy(self, input_tensor):
         input_numpy = input_tensor.detach().to(torch.device('cpu')).numpy().astype(np.float32, copy=False)
+        shape_key = tuple(int(x) for x in input_tensor.shape)
         compiled_model = self._compile_openvino_model(input_tensor)
-        infer_request = compiled_model.create_infer_request()
+        infer_request = self._ov_infer_request_cache.get(shape_key)
+        if infer_request is None:
+            infer_request = compiled_model.create_infer_request()
+            self._ov_infer_request_cache[shape_key] = infer_request
         input_name = self._ov_port_name(compiled_model.input(0))
         try:
             if input_name:

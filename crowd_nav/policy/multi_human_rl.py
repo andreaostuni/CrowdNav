@@ -44,7 +44,7 @@ class MultiHumanRL(CADRL):
                                               for next_human_state in next_human_states], dim=0)
                 rotated_batch_input = self.rotate(batch_next_states).unsqueeze(0)
                 if self.with_om:
-                    if occupancy_maps is None:
+                    if occupancy_maps is None or self.query_env:
                         occupancy_maps = self.build_occupancy_maps(next_human_states).unsqueeze(0)
                     rotated_batch_input = torch.cat([rotated_batch_input, occupancy_maps.to(self.device)], dim=2)
                 # VALUE UPDATE
