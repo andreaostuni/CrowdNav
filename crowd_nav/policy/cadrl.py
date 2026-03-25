@@ -4,6 +4,7 @@ import numpy as np
 import itertools
 import logging
 import os
+import threading
 from collections.abc import Mapping
 from crowd_sim.envs.policy.policy import Policy
 from crowd_sim.envs.utils.action import ActionRot, ActionXY
@@ -67,6 +68,7 @@ class CADRL(Policy):
         self._ov_cache_dir = None
         self._ov_compiled_cache = dict()
         self._ov_infer_request_cache = dict()
+        self._ov_infer_lock = threading.Lock()
         self._ov_training_warning_emitted = False
 
     def configure(self, config):
@@ -276,18 +278,27 @@ class CADRL(Policy):
         input_numpy = input_tensor.detach().to(torch.device('cpu')).numpy().astype(np.float32, copy=False)
         shape_key = tuple(int(x) for x in input_tensor.shape)
         compiled_model = self._compile_openvino_model(input_tensor)
-        infer_request = self._ov_infer_request_cache.get(shape_key)
-        if infer_request is None:
-            infer_request = compiled_model.create_infer_request()
-            self._ov_infer_request_cache[shape_key] = infer_request
         input_name = self._ov_port_name(compiled_model.input(0))
-        try:
-            if input_name:
-                outputs = infer_request.infer({input_name: input_numpy})
-            else:
-                outputs = infer_request.infer([input_numpy])
-        except Exception:
-            outputs = infer_request.infer([input_numpy])
+
+        with self._ov_infer_lock:
+            infer_request = self._ov_infer_request_cache.get(shape_key)
+            if infer_request is None:
+                infer_request = compiled_model.create_infer_request()
+                self._ov_infer_request_cache[shape_key] = infer_request
+            try:
+                if input_name:
+                    outputs = infer_request.infer({input_name: input_numpy})
+                else:
+                    outputs = infer_request.infer([input_numpy])
+            except Exception:
+                # Recreate the request once in case the cached request became invalid.
+                self._ov_infer_request_cache.pop(shape_key, None)
+                infer_request = compiled_model.create_infer_request()
+                self._ov_infer_request_cache[shape_key] = infer_request
+                if input_name:
+                    outputs = infer_request.infer({input_name: input_numpy})
+                else:
+                    outputs = infer_request.infer([input_numpy])
 
         if isinstance(outputs, Mapping):
             output_port = compiled_model.output(0)
